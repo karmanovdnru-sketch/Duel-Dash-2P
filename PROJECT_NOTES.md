@@ -1,14 +1,25 @@
-# Project notes
+# Duel Dash 2P Arcade — project notes
 
-## Networking model
+Version: 0.2.0
 
-The host is authoritative. Player 1 is always the host. Player 2 is always the client.
+Implemented:
+- 7 game modes: FIGHT, RACE, TAP_DUEL, PONG, PENALTY, REACTION, TUG.
+- Solo mode against built-in AI with no network connection.
+- Multiplayer host/client over TCP Wi-Fi LAN or Bluetooth Classic RFCOMM.
+- Host-authoritative simulation and 20 Hz state snapshots.
+- 6 selectable fighter palettes.
+- Procedural cartoon character rendering and simple run/punch animations.
+- ToneGenerator sound effects and haptic feedback.
+- Original colorful arcade menu.
+- GitHub Actions APK build workflow with the corrected Android SDK setup.
 
-Fight input from player 2 is sent as a state packet. Race input is sent as discrete tap events. The host publishes a state snapshot around 20 times per second over a reliable ordered stream (TCP or RFCOMM).
+Validation performed in the generation environment:
+- All Java sources compile against API-shape Android stubs with javac 17+ syntax checking.
+- Existing Wi-Fi/Bluetooth transport source kept intact.
+- GitHub Actions workflow uses the same SDK setup that successfully produced the earlier project APK.
 
-## Easy extension points
-
-- Add a new mini-game by extending `GameMode` and adding update/draw/protocol branches in `DuelGameView`.
-- Add LAN discovery with UDP broadcast/mDNS while keeping the existing TCP game channel.
-- Replace the Canvas vector characters with sprite sheets without changing the network layer.
-- Add audio via `SoundPool`.
+Recommended device validation after upload/build:
+- Solo bot matches in all 7 modes.
+- Two-phone Wi-Fi match and restart in all modes.
+- Bluetooth pairing/permission behavior on Android 12+.
+- Touch layout on small 16:9 and tall landscape screens.

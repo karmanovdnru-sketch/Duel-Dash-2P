@@ -9,6 +9,8 @@ import android.bluetooth.BluetoothManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -22,6 +24,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.openai.dueldash.game.DuelGameView;
+import com.openai.dueldash.game.FighterStyle;
 import com.openai.dueldash.game.GameMode;
 import com.openai.dueldash.net.BluetoothConnector;
 import com.openai.dueldash.net.ConnectionAttempt;
@@ -38,6 +41,7 @@ public final class MainActivity extends Activity {
     private static final int REQ_BLUETOOTH_CONNECT = 700;
 
     private GameMode selectedMode = GameMode.FIGHT;
+    private int selectedFighter = 0;
     private ConnectionAttempt activeAttempt;
     private PeerConnection currentConnection;
     private DuelGameView gameView;
@@ -48,6 +52,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().setStatusBarColor(Color.rgb(9, 14, 27));
         showMainMenu();
     }
 
@@ -80,48 +85,118 @@ public final class MainActivity extends Activity {
         if (!inGame) closeConnection();
 
         LinearLayout root = baseLayout();
-        root.addView(title("DUEL DASH 2P", 32));
-        root.addView(body("Мини-игры на двух Android-телефонах. Хост выбирает игру, второй телефон подключается по Wi‑Fi или Bluetooth."));
-        root.addView(spacer(18));
+        TextView logo = title("DUEL DASH", 36);
+        logo.setTextColor(Color.rgb(255, 230, 91));
+        root.addView(logo);
+        root.addView(title("2P ARCADE", 18));
+        root.addView(body("Яркие мини-игры для одного телефона против бота или для двух Android-телефонов по Wi‑Fi / Bluetooth."));
+        root.addView(spacer(14));
 
-        Button fight = actionButton("🥊  ДРАКА");
-        fight.setOnClickListener(v -> {
-            selectedMode = GameMode.FIGHT;
-            showTransportMenu();
-        });
-        root.addView(fight);
+        Button fighter = cardButton("🎭  Боец: " + FighterStyle.get(selectedFighter).name + " " + FighterStyle.get(selectedFighter).emoji,
+                "Нажмите, чтобы выбрать персонажа", FighterStyle.get(selectedFighter).body);
+        fighter.setOnClickListener(v -> showFighterMenu());
+        root.addView(fighter);
 
-        Button race = actionButton("🏁  ГОНКА");
-        race.setOnClickListener(v -> {
-            selectedMode = GameMode.RACE;
-            showTransportMenu();
-        });
-        root.addView(race);
+        root.addView(section("ВЫБЕРИТЕ МИНИ-ИГРУ"));
+        for (GameMode mode : GameMode.values()) {
+            Button game = cardButton(mode.icon + "  " + mode.title, mode.description, gameColor(mode));
+            game.setOnClickListener(v -> {
+                selectedMode = mode;
+                showGameOptions();
+            });
+            root.addView(game);
+        }
 
-        root.addView(spacer(16));
-        root.addView(body("Подсказка: для Bluetooth сначала спарьте телефоны в системных настройках Android. Для Wi‑Fi оба устройства должны быть в одной локальной сети или один телефон может раздать точку доступа."));
+        root.addView(spacer(10));
+        root.addView(body("Совет: режим «Против бота» запускается сразу и не требует второго телефона, Wi‑Fi или Bluetooth."));
         setContentView(wrap(root));
+    }
+
+    private void showFighterMenu() {
+        atMainMenu = false;
+        LinearLayout root = baseLayout();
+        root.addView(title("ВЫБОР БОЙЦА", 30));
+        root.addView(body("Персонаж используется во всех мини-играх. У каждого свой цвет и мультяшный образ."));
+        root.addView(spacer(10));
+
+        for (int i = 0; i < FighterStyle.count(); i++) {
+            FighterStyle style = FighterStyle.get(i);
+            String mark = i == selectedFighter ? "  ✓ ВЫБРАН" : "";
+            Button b = cardButton(style.emoji + "  " + style.name + mark,
+                    "Основной цвет персонажа", style.body);
+            final int index = i;
+            b.setOnClickListener(v -> {
+                selectedFighter = index;
+                showMainMenu();
+            });
+            root.addView(b);
+        }
+
+        Button back = secondaryButton("← Назад");
+        back.setOnClickListener(v -> showMainMenu());
+        root.addView(back);
+        setContentView(wrap(root));
+    }
+
+    private void showGameOptions() {
+        atMainMenu = false;
+        cancelAttempt();
+        LinearLayout root = baseLayout();
+        root.addView(title(selectedMode.icon + "  " + selectedMode.title, 30));
+        root.addView(body(selectedMode.description));
+        root.addView(spacer(8));
+        root.addView(pill("Ваш боец: " + FighterStyle.get(selectedFighter).name + " " + FighterStyle.get(selectedFighter).emoji,
+                FighterStyle.get(selectedFighter).body));
+        root.addView(spacer(12));
+
+        Button solo = actionButton("🤖  ИГРАТЬ СЕЙЧАС ПРОТИВ БОТА", Color.rgb(50, 186, 120));
+        solo.setOnClickListener(v -> launchSoloGame());
+        root.addView(solo);
+
+        Button twoPhones = actionButton("📱  ИГРА НА ДВУХ ТЕЛЕФОНАХ", Color.rgb(64, 104, 235));
+        twoPhones.setOnClickListener(v -> showTransportMenu());
+        root.addView(twoPhones);
+
+        root.addView(spacer(8));
+        Button fighter = secondaryButton("🎭 Сменить бойца");
+        fighter.setOnClickListener(v -> showFighterMenu());
+        root.addView(fighter);
+
+        Button back = secondaryButton("← Назад к играм");
+        back.setOnClickListener(v -> showMainMenu());
+        root.addView(back);
+        setContentView(wrap(root));
+    }
+
+    private void launchSoloGame() {
+        cancelAttempt();
+        closeConnection();
+        int botFighter = (selectedFighter + 1 + (int) (System.nanoTime() % (FighterStyle.count() - 1))) % FighterStyle.count();
+        launchGame(null, true, selectedMode, true, botFighter);
     }
 
     private void showTransportMenu() {
         atMainMenu = false;
         cancelAttempt();
         LinearLayout root = baseLayout();
-        root.addView(title(modeLabel() + " · подключение", 26));
-        root.addView(body("На телефоне-хосте выберите способ связи и создайте комнату. На втором телефоне выберите тот же способ связи и подключитесь."));
-        root.addView(spacer(14));
+        root.addView(title(selectedMode.icon + "  " + selectedMode.title, 28));
+        root.addView(body("Один телефон создаёт комнату, второй подключается. Хост управляет симуляцией и синхронизирует игру."));
+        root.addView(spacer(12));
 
-        Button wifi = actionButton("📶  WI‑FI / ТОЧКА ДОСТУПА");
+        Button wifi = actionButton("📶  WI‑FI / ТОЧКА ДОСТУПА", Color.rgb(45, 149, 226));
         wifi.setOnClickListener(v -> showWifiMenu());
         root.addView(wifi);
 
-        Button bluetooth = actionButton("🔵  BLUETOOTH");
+        Button bluetooth = actionButton("🔵  BLUETOOTH", Color.rgb(74, 91, 220));
         bluetooth.setOnClickListener(v -> ensureBluetoothPermission(this::showBluetoothMenu));
         root.addView(bluetooth);
 
-        root.addView(spacer(10));
-        Button back = secondaryButton("← Назад к играм");
-        back.setOnClickListener(v -> showMainMenu());
+        Button solo = secondaryButton("🤖 Запустить без второго телефона");
+        solo.setOnClickListener(v -> launchSoloGame());
+        root.addView(solo);
+
+        Button back = secondaryButton("← Назад");
+        back.setOnClickListener(v -> showGameOptions());
         root.addView(back);
         setContentView(wrap(root));
     }
@@ -130,22 +205,21 @@ public final class MainActivity extends Activity {
         atMainMenu = false;
         cancelAttempt();
         LinearLayout root = baseLayout();
-        root.addView(title("Wi‑Fi · " + modeLabel(), 26));
+        root.addView(title("📶  Wi‑Fi · " + selectedMode.title, 27));
 
         String ip = WifiConnector.findLocalIpv4();
-        TextView info = body("ХОСТ: создайте комнату и сообщите второму игроку IP.\n" +
-                "Ваш локальный IP: " + ip + "\nПорт: " + WIFI_PORT + "\n\n" +
-                "КЛИЕНТ: введите IP хоста. Режим игры клиент получит автоматически от хоста.");
-        root.addView(info);
-        root.addView(spacer(12));
+        root.addView(body("ХОСТ: создайте комнату и сообщите IP второму игроку.\n" +
+                "IP: " + ip + "   Порт: " + WIFI_PORT + "\n\n" +
+                "КЛИЕНТ: введите IP хоста. Оба телефона должны быть в одной Wi‑Fi сети или точке доступа."));
+        root.addView(spacer(10));
 
         TextView status = statusView("Готово к подключению");
         root.addView(status);
 
-        Button host = actionButton("Создать комнату (ХОСТ)");
+        Button host = actionButton("Создать комнату (ХОСТ)", Color.rgb(50, 186, 120));
         host.setOnClickListener(v -> {
             cancelAttempt();
-            status.setText("Ожидаем второго игрока…\nIP: " + WifiConnector.findLocalIpv4() + ":" + WIFI_PORT);
+            status.setText("Ожидаем второго игрока…\n" + WifiConnector.findLocalIpv4() + ":" + WIFI_PORT);
             activeAttempt = WifiConnector.host(WIFI_PORT, new WifiConnector.Callback() {
                 @Override
                 public void onConnected(PeerConnection connection) {
@@ -165,11 +239,13 @@ public final class MainActivity extends Activity {
         ipInput.setSingleLine(true);
         ipInput.setTextColor(Color.WHITE);
         ipInput.setHintTextColor(Color.rgb(145, 160, 184));
-        ipInput.setBackgroundColor(Color.rgb(30, 43, 63));
+        ipInput.setBackground(rounded(Color.rgb(29, 41, 62), 16, Color.rgb(64, 82, 112)));
         ipInput.setPadding(dp(14), dp(11), dp(14), dp(11));
-        root.addView(ipInput, fullWidth(dp(58)));
+        LinearLayout.LayoutParams ipLp = fullWidth(dp(58));
+        ipLp.setMargins(0, dp(6), 0, dp(6));
+        root.addView(ipInput, ipLp);
 
-        Button join = actionButton("Подключиться к хосту");
+        Button join = actionButton("Подключиться к хосту", Color.rgb(64, 104, 235));
         join.setOnClickListener(v -> {
             String target = ipInput.getText().toString().trim();
             if (target.isEmpty()) {
@@ -192,6 +268,10 @@ public final class MainActivity extends Activity {
         });
         root.addView(join);
 
+        Button solo = secondaryButton("🤖 Не ждать второго игрока, играть с ботом");
+        solo.setOnClickListener(v -> launchSoloGame());
+        root.addView(solo);
+
         Button back = secondaryButton("← Назад");
         back.setOnClickListener(v -> showTransportMenu());
         root.addView(back);
@@ -206,9 +286,9 @@ public final class MainActivity extends Activity {
         BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
 
         LinearLayout root = baseLayout();
-        root.addView(title("Bluetooth · " + modeLabel(), 26));
-        root.addView(body("Перед игрой спарьте два телефона через настройки Bluetooth Android. Один телефон запускает комнату, второй выбирает хост из списка спаренных устройств."));
-        root.addView(spacer(10));
+        root.addView(title("🔵  Bluetooth · " + selectedMode.title, 27));
+        root.addView(body("Сначала спарьте телефоны в настройках Android. Затем на одном устройстве создайте комнату, а на втором выберите хост."));
+        root.addView(spacer(8));
 
         TextView status = statusView("Готово к подключению");
         root.addView(status);
@@ -217,14 +297,14 @@ public final class MainActivity extends Activity {
             status.setText("На этом устройстве Bluetooth недоступен.");
         } else if (!adapter.isEnabled()) {
             status.setText("Bluetooth выключен.");
-            Button settings = actionButton("Открыть настройки Bluetooth");
+            Button settings = actionButton("Открыть настройки Bluetooth", Color.rgb(74, 91, 220));
             settings.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)));
             root.addView(settings);
         } else {
-            Button host = actionButton("Создать Bluetooth-комнату (ХОСТ)");
+            Button host = actionButton("Создать Bluetooth-комнату (ХОСТ)", Color.rgb(50, 186, 120));
             host.setOnClickListener(v -> {
                 cancelAttempt();
-                status.setText("Ожидаем подключение второго телефона по Bluetooth…");
+                status.setText("Ожидаем второй телефон по Bluetooth…");
                 activeAttempt = BluetoothConnector.host(adapter, new BluetoothConnector.Callback() {
                     @Override
                     public void onConnected(PeerConnection connection) {
@@ -239,7 +319,7 @@ public final class MainActivity extends Activity {
             });
             root.addView(host);
 
-            root.addView(label("Спаренные устройства:"));
+            root.addView(section("СПАРЕННЫЕ УСТРОЙСТВА"));
             Set<BluetoothDevice> bonded = adapter.getBondedDevices();
             List<BluetoothDevice> devices = new ArrayList<>(bonded);
             devices.sort(Comparator.comparing(d -> {
@@ -248,12 +328,10 @@ public final class MainActivity extends Activity {
             }));
 
             if (devices.isEmpty()) {
-                root.addView(body("Список пуст. Сначала откройте настройки Bluetooth и выполните сопряжение телефонов."));
+                root.addView(body("Список пуст. Откройте настройки Bluetooth и выполните сопряжение телефонов."));
             } else {
                 for (BluetoothDevice device : devices) {
-                    String name = device.getName();
-                    if (name == null || name.trim().isEmpty()) name = "Без имени";
-                    Button deviceButton = secondaryButton("Подключиться: " + name + "\n" + device.getAddress());
+                    Button deviceButton = secondaryButton("📱  " + safeDeviceName(device) + "\n" + device.getAddress());
                     BluetoothDevice chosen = device;
                     deviceButton.setOnClickListener(v -> {
                         cancelAttempt();
@@ -279,6 +357,10 @@ public final class MainActivity extends Activity {
             root.addView(settings);
         }
 
+        Button solo = secondaryButton("🤖 Не ждать второго игрока, играть с ботом");
+        solo.setOnClickListener(v -> launchSoloGame());
+        root.addView(solo);
+
         Button back = secondaryButton("← Назад");
         back.setOnClickListener(v -> showTransportMenu());
         root.addView(back);
@@ -288,11 +370,11 @@ public final class MainActivity extends Activity {
     private void handleConnected(PeerConnection connection, boolean host, TextView status) {
         activeAttempt = null;
         currentConnection = connection;
-        status.setText(host ? "Игрок подключился. Запускаем игру…" : "Связь установлена. Получаем режим от хоста…");
+        status.setText(host ? "Игрок подключился. Запускаем…" : "Связь установлена. Получаем игру от хоста…");
 
         if (host) {
-            connection.send("MODE|" + selectedMode.name());
-            launchGame(connection, true, selectedMode);
+            connection.send("MODE|" + selectedMode.name() + "|" + selectedFighter);
+            launchGame(connection, true, selectedMode, false, (selectedFighter + 1) % FighterStyle.count());
             return;
         }
 
@@ -303,31 +385,33 @@ public final class MainActivity extends Activity {
             public void onMessage(String line) {
                 if (launched || !line.startsWith("MODE|")) return;
                 try {
-                    GameMode mode = GameMode.valueOf(line.substring("MODE|".length()));
+                    String[] parts = line.split("\\|");
+                    GameMode mode = GameMode.valueOf(parts[1]);
+                    int hostFighter = parts.length >= 3 ? Integer.parseInt(parts[2]) : 0;
                     launched = true;
-                    runOnUiThread(() -> launchGame(connection, false, mode));
+                    runOnUiThread(() -> launchGame(connection, false, mode, false, hostFighter));
                 } catch (Exception e) {
-                    runOnUiThread(() -> status.setText("Неизвестный режим игры от хоста."));
+                    runOnUiThread(() -> status.setText("Не удалось прочитать режим игры от хоста."));
                 }
             }
 
             @Override
             public void onClosed(Throwable error) {
-                if (!launched) {
-                    runOnUiThread(() -> status.setText("Соединение закрыто: " + safeMessage(error)));
-                }
+                if (!launched) runOnUiThread(() -> status.setText("Соединение закрыто: " + safeMessage(error)));
             }
         });
         connection.start();
     }
 
-    private void launchGame(PeerConnection connection, boolean host, GameMode mode) {
+    private void launchGame(PeerConnection connection, boolean host, GameMode mode, boolean solo, int remoteFighter) {
         atMainMenu = false;
         selectedMode = mode;
         inGame = true;
-        gameView = new DuelGameView(this, mode, host, connection);
+        currentConnection = connection;
+        gameView = new DuelGameView(this, mode, host, connection, solo, selectedFighter, remoteFighter);
         setContentView(gameView);
         gameView.requestFocus();
+        if (connection != null && !host) connection.send("CHAR|" + selectedFighter);
     }
 
     private void ensureBluetoothPermission(Runnable action) {
@@ -349,7 +433,7 @@ public final class MainActivity extends Activity {
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             if (action != null) action.run();
         } else {
-            Toast.makeText(this, "Для игры по Bluetooth нужно разрешение «Устройства поблизости».", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Для Bluetooth нужно разрешение «Устройства поблизости».", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -370,8 +454,17 @@ public final class MainActivity extends Activity {
         currentConnection = null;
     }
 
-    private String modeLabel() {
-        return selectedMode == GameMode.FIGHT ? "ДРАКА" : "ГОНКА";
+    private int gameColor(GameMode mode) {
+        switch (mode) {
+            case FIGHT: return Color.rgb(221, 73, 79);
+            case RACE: return Color.rgb(48, 145, 219);
+            case TAP_DUEL: return Color.rgb(238, 161, 32);
+            case PONG: return Color.rgb(63, 180, 130);
+            case PENALTY: return Color.rgb(63, 158, 80);
+            case REACTION: return Color.rgb(147, 92, 214);
+            case TUG: return Color.rgb(201, 110, 52);
+            default: return Color.rgb(64, 104, 235);
+        }
     }
 
     private String safeMessage(Throwable t) {
@@ -389,7 +482,7 @@ public final class MainActivity extends Activity {
     private ScrollView wrap(LinearLayout root) {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(Color.rgb(12, 20, 35));
+        scroll.setBackgroundColor(Color.rgb(10, 16, 30));
         scroll.addView(root);
         return scroll;
     }
@@ -398,8 +491,8 @@ public final class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(28), dp(24), dp(28), dp(24));
-        root.setBackgroundColor(Color.rgb(12, 20, 35));
+        root.setPadding(dp(28), dp(20), dp(28), dp(28));
+        root.setBackgroundColor(Color.rgb(10, 16, 30));
         return root;
     }
 
@@ -409,35 +502,50 @@ public final class MainActivity extends Activity {
         view.setTextColor(Color.WHITE);
         view.setTextSize(sp);
         view.setGravity(Gravity.CENTER);
-        view.setPadding(0, dp(4), 0, dp(12));
-        view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        view.setPadding(0, dp(2), 0, dp(7));
+        view.setTypeface(Typeface.DEFAULT_BOLD);
         return view;
     }
 
     private TextView body(String text) {
         TextView view = new TextView(this);
         view.setText(text);
-        view.setTextColor(Color.rgb(190, 205, 225));
-        view.setTextSize(16);
+        view.setTextColor(Color.rgb(191, 204, 225));
+        view.setTextSize(15);
         view.setGravity(Gravity.CENTER);
-        view.setLineSpacing(0f, 1.15f);
-        view.setPadding(dp(8), dp(4), dp(8), dp(8));
+        view.setLineSpacing(0f, 1.12f);
+        view.setPadding(dp(8), dp(3), dp(8), dp(6));
         return view;
     }
 
-    private TextView label(String text) {
+    private TextView section(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(Color.rgb(137, 156, 188));
+        view.setTextSize(13);
+        view.setTypeface(Typeface.DEFAULT_BOLD);
+        view.setGravity(Gravity.START);
+        view.setPadding(dp(4), dp(18), 0, dp(7));
+        view.setLayoutParams(fullWidth(-2));
+        return view;
+    }
+
+    private TextView pill(String text, int color) {
         TextView view = body(text);
         view.setTextColor(Color.WHITE);
-        view.setGravity(Gravity.START);
-        view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        view.setPadding(0, dp(14), 0, dp(8));
+        view.setTypeface(Typeface.DEFAULT_BOLD);
+        view.setBackground(rounded(darken(color, 0.42f), 18, color));
+        view.setPadding(dp(14), dp(10), dp(14), dp(10));
+        LinearLayout.LayoutParams lp = fullWidth(-2);
+        lp.setMargins(0, dp(5), 0, dp(5));
+        view.setLayoutParams(lp);
         return view;
     }
 
     private TextView statusView(String text) {
         TextView view = body(text);
-        view.setTextColor(Color.rgb(119, 209, 255));
-        view.setBackgroundColor(Color.rgb(24, 38, 57));
+        view.setTextColor(Color.rgb(124, 215, 255));
+        view.setBackground(rounded(Color.rgb(23, 36, 55), 16, Color.rgb(52, 73, 103)));
         view.setPadding(dp(12), dp(10), dp(12), dp(10));
         LinearLayout.LayoutParams lp = fullWidth(-2);
         lp.setMargins(0, 0, 0, dp(10));
@@ -445,14 +553,31 @@ public final class MainActivity extends Activity {
         return view;
     }
 
-    private Button actionButton(String text) {
+    private Button cardButton(String headline, String detail, int color) {
         Button button = new Button(this);
-        button.setText(text);
-        button.setTextSize(17);
+        button.setText(headline + "\n" + detail);
+        button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        button.setTextSize(15);
         button.setTextColor(Color.WHITE);
         button.setAllCaps(false);
-        button.setBackgroundColor(Color.rgb(53, 89, 224));
-        LinearLayout.LayoutParams lp = fullWidth(dp(58));
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setPadding(dp(18), dp(10), dp(18), dp(10));
+        button.setBackground(rounded(darken(color, 0.53f), 20, color));
+        LinearLayout.LayoutParams lp = fullWidth(dp(76));
+        lp.setMargins(0, dp(5), 0, dp(5));
+        button.setLayoutParams(lp);
+        return button;
+    }
+
+    private Button actionButton(String text, int color) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setTextSize(16);
+        button.setTextColor(Color.WHITE);
+        button.setAllCaps(false);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setBackground(rounded(color, 18, lighten(color, 1.25f)));
+        LinearLayout.LayoutParams lp = fullWidth(dp(60));
         lp.setMargins(0, dp(6), 0, dp(6));
         button.setLayoutParams(lp);
         return button;
@@ -461,14 +586,36 @@ public final class MainActivity extends Activity {
     private Button secondaryButton(String text) {
         Button button = new Button(this);
         button.setText(text);
-        button.setTextSize(15);
+        button.setTextSize(14);
         button.setTextColor(Color.WHITE);
         button.setAllCaps(false);
-        button.setBackgroundColor(Color.rgb(44, 60, 82));
+        button.setBackground(rounded(Color.rgb(38, 52, 75), 16, Color.rgb(68, 84, 110)));
         LinearLayout.LayoutParams lp = fullWidth(-2);
         lp.setMargins(0, dp(5), 0, dp(5));
         button.setLayoutParams(lp);
         return button;
+    }
+
+    private GradientDrawable rounded(int fill, int radiusDp, int strokeColor) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill);
+        d.setCornerRadius(dp(radiusDp));
+        d.setStroke(dp(1), strokeColor);
+        return d;
+    }
+
+    private int darken(int color, float factor) {
+        return Color.rgb(
+                Math.max(0, Math.min(255, Math.round(Color.red(color) * factor))),
+                Math.max(0, Math.min(255, Math.round(Color.green(color) * factor))),
+                Math.max(0, Math.min(255, Math.round(Color.blue(color) * factor))));
+    }
+
+    private int lighten(int color, float factor) {
+        return Color.rgb(
+                Math.max(0, Math.min(255, Math.round(Color.red(color) * factor))),
+                Math.max(0, Math.min(255, Math.round(Color.green(color) * factor))),
+                Math.max(0, Math.min(255, Math.round(Color.blue(color) * factor))));
     }
 
     private View spacer(int heightDp) {
